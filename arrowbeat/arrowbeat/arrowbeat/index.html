@@ -1,1 +1,181 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArrowBeat: Rhythm Rumble</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#11102b;color:white;font-family:Arial,sans-serif;text-align:center}
+header{padding:12px;background:#24204b;display:flex;justify-content:space-around;align-items:center;flex-wrap:wrap;gap:10px}
+h1{margin:4px;color:#ffe66d;text-shadow:3px 3px #f04cba}
+button,select{padding:10px;border:2px solid #6befff;border-radius:9px;background:#24204b;color:white;font-weight:bold;cursor:pointer}
+#stage{position:relative;max-width:900px;height:300px;margin:12px auto;background:linear-gradient(#454c89 0 60%,#272344 60%);border:3px solid #7063c9;border-radius:15px;overflow:hidden}
+.character{position:absolute;bottom:22px;width:110px;height:155px}
+#player{left:7%}#rival{right:7%}
+.head{width:65px;height:65px;margin:auto;background:#ffc99f;border:5px solid #16132c;border-radius:45%;position:relative}
+.hair{position:absolute;top:-8px;left:18px;width:72px;height:25px;background:#262044;border-radius:50%;border:4px solid #16132c}
+.body{width:85px;height:60px;margin:-1px auto;background:#36caff;border:5px solid #16132c;border-radius:18px}
+#rival .body{background:#ff55b8}
+.legs{font-size:32px;margin-top:-3px}
+.name{font-weight:bold;color:#ffe66d}
+#lanes{position:absolute;left:31%;right:31%;top:10px;bottom:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;background:#11102b99;padding:5px}
+.lane{position:relative;overflow:hidden;border:2px solid #ffffff33;border-radius:8px}
+.target{position:absolute;top:8px;left:4%;width:92%;height:45px;display:grid;place-items:center;border:3px solid var(--c);border-radius:9px;font-size:28px;font-weight:bold;background:#191832}
+.note{position:absolute;left:8%;width:84%;height:40px;display:grid;place-items:center;border:3px solid var(--c);border-radius:9px;background:#24204b;font-size:25px;font-weight:bold}
+#message{position:absolute;top:48%;left:0;right:0;font-size:27px;font-weight:bold;color:#ffe66d;text-shadow:2px 2px #111}
+#controls{padding:8px}
+#mobile{display:flex;justify-content:center;gap:8px;padding:10px}
+#mobile button{font-size:25px;width:65px}
+small{color:#d6d5ff}
+@media(max-width:600px){#stage{height:270px;margin:8px}#lanes{left:25%;right:25%}.character{transform:scale(.8);transform-origin:bottom}.character .name{font-size:12px}}
+</style>
+</head>
+<body>
+<header>
+<h1>⚡ ARROWBEAT</h1>
+<label>SONG
+<select id="song">
+<option value="neon">Neon Showdown</option>
+<option value="pixel">Pixel Panic</option>
+<option value="sunset">Sunset Sprint</option>
+</select></label>
+<div>⭐ <span id="score">0</span>　🔥 <span id="combo">0</span> combo　💚 <span id="health">100</span>%</div>
+</header>
+<div id="stage">
+<div class="character" id="player"><div class="name">YOU</div><div class="head"><div class="hair"></div></div><div class="body"></div><div class="legs">👟 👟</div></div>
+<div class="character" id="rival"><div class="name">DJ PIXEL</div><div class="head"><div class="hair" style="background:#f3e8ff"></div></div><div class="body"></div><div class="legs">👟 👟</div></div>
+<div id="lanes">
+<div class="lane" style="--c:#55e8ff"><div class="target">←</div></div>
+<div class="lane" style="--c:#63ff93"><div class="target">↓</div></div>
+<div class="lane" style="--c:#ff6eae"><div class="target">↑</div></div>
+<div class="lane" style="--c:#ffe66d"><div class="target">→</div></div>
+</div>
+<div id="message">READY TO RAP?</div>
+</div>
+<div id="controls">
+<button id="start">▶ START SONG</button>
+<button id="sound">🔊 SOUND ON</button>
+<p><small>Use ← ↓ ↑ → or A S W D. Hit the matching arrow when it reaches the target!</small></p>
+</div>
+<div id="mobile">
+<button data-lane="0">←</button><button data-lane="1">↓</button><button data-lane="2">↑</button><button data-lane="3">→</button>
+</div>
+<script>
+const arrows=["←","↓","↑","→"];
+const colors=["#55e8ff","#63ff93","#ff6eae","#ffe66d"];
+const tracks={
+ neon:{bpm:112,root:220,notes:[0,3,5,7,10]},
+ pixel:{bpm:136,root:165,notes:[0,2,5,7,9]},
+ sunset:{bpm:96,root:196,notes:[0,4,5,7,11]}
+};
+let audio=null,muted=false,running=false,score=0,combo=0,health=100;
+let notes=[],lastSpawn=0,startTime=0,lastBeat=-1,frame=0;
+const $=id=>document.getElementById(id);
+function audioStart(){
+ if(!audio)audio=new(window.AudioContext||window.webkitAudioContext)();
+ if(audio.state==="suspended")audio.resume();
+}
+function tone(freq,duration=.12,type="triangle",volume=.04){
+ if(muted)return;
+ audioStart();
+ const osc=audio.createOscillator(),gain=audio.createGain();
+ osc.type=type;osc.frequency.value=freq;
+ gain.gain.setValueAtTime(volume,audio.currentTime);
+ gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);
+ osc.connect(gain);gain.connect(audio.destination);
+ osc.start();osc.stop(audio.currentTime+duration);
+}
+function say(text){$("message").textContent=text}
+function hud(){
+ $("score").textContent=score;
+ $("combo").textContent=combo;
+ $("health").textContent=health;
+}
+function spawn(t){
+ const lane=Math.floor(Math.random()*4);
+ const el=document.createElement("div");
+ el.className="note";el.textContent=arrows[lane];
+ el.style.setProperty("--c",colors[lane]);
+ el.style.left=(lane*25+8.5)+"%";
+ el.style.top="-45px";
+ $("lanes").appendChild(el);
+ notes.push({lane,el,time:t,hit:false});
+}
+function start(){
+ audioStart();notes.forEach(n=>n.el.remove());notes=[];
+ score=0;combo=0;health=100;hud();
+ running=true;startTime=performance.now();lastSpawn=0;lastBeat=-1;
+ $("start").textContent="↻ RESTART SONG";say("LET'S GO!");
+ cancelAnimationFrame(frame);loop(startTime);
+}
+function loop(now){
+ if(!running)return;
+ const t=(now-startTime)/1000;
+ const tr=tracks[$("song").value],beat=60/tr.bpm;
+ const b=Math.floor(t/beat);
+ if(b!==lastBeat){
+  lastBeat=b;
+  const n=tr.notes[(b*3+Math.floor(b/4))%tr.notes.length];
+  tone(tr.root*Math.pow(2,n/12),.11,"triangle",.025);
+  if(b%2===0)tone(70,.07,"sine",.035);
+ }
+ if(t-lastSpawn>beat*.8){spawn(t);lastSpawn=t}
+ const laneHeight=$("lanes").clientHeight;
+ for(let i=notes.length-1;i>=0;i--){
+  const n=notes[i],age=t-n.time;
+  const y=58+age*laneHeight/(beat*1.7);
+  n.el.style.top=y+"px";
+  if(y>laneHeight-5){
+   n.el.remove();notes.splice(i,1);combo=0;health=Math.max(0,health-8);hud();say("MISS!");
+   if(health<=0){running=false;say("GAME OVER! TRY AGAIN");$("start").textContent="▶ TRY AGAIN";return}
+  }
+ }
+ const bob=Math.sin(t*8)*4;
+ $("player").style.transform=`translateY(${bob}px) rotate(${Math.sin(t*4)*2}deg)`;
+ $("rival").style.transform=`translateY(${-bob}px) rotate(${-Math.sin(t*4)*2}deg)`;
+ frame=requestAnimationFrame(loop);
+}
+function hit(lane){
+ if(!running)return;
+ const laneEl=document.querySelectorAll(".lane")[lane];
+ const targetY=58;
+ let best=null,dist=Infinity;
+ for(const n of notes){
+  if(n.lane!==lane)continue;
+  const y=parseFloat(n.el.style.top)||-100;
+  const d=Math.abs(y-targetY);
+  if(d<dist){dist=d;best=n}
+ }
+ if(best&&dist<70){
+  best.el.remove();notes=notes.filter(n=>n!==best);
+  combo++;score+=Math.max(50,Math.round(250-dist));
+  health=Math.min(100,health+1);hud();
+  laneEl.querySelector(".target").style.background=colors[lane];
+  setTimeout(()=>laneEl.querySelector(".target").style.background="#191832",100);
+  say(dist<25?"PERFECT!":"GOOD!");
+  const tr=tracks[$("song").value];
+  tone(tr.root*Math.pow(2,tr.notes[lane%tr.notes.length]/12),.1,"square",.045);
+  $("player").animate([{transform:"scale(1.08) rotate(-4deg)"},{transform:"scale(1)"}],{duration:140});
+ }else{
+  combo=0;health=Math.max(0,health-4);hud();say("BAD!");
+  tone(100,.12,"sawtooth",.02);
+ }
+}
+const keymap={ArrowLeft:0,ArrowDown:1,ArrowUp:2,ArrowRight:3,a:0,s:1,w:2,d:3};
+window.addEventListener("keydown",e=>{
+ if(keymap[e.key]!==undefined){e.preventDefault();if(!e.repeat)hit(keymap[e.key]);}
+ else if(keymap[e.key.toLowerCase()]!==undefined&&!e.repeat)hit(keymap[e.key.toLowerCase()]);
+});
+document.querySelectorAll("[data-lane]").forEach(b=>b.addEventListener("pointerdown",()=>hit(Number(b.dataset.lane))));
+$("start").addEventListener("click",start);
+$("sound").addEventListener("click",()=>{
+ muted=!muted;$("sound").textContent=muted?"🔇 SOUND OFF":"🔊 SOUND ON";
+ if(!muted)audioStart();
+});
+$("song").addEventListener("change",()=>{if(running)start()});
+</script>
+</body>
+</html>
+
