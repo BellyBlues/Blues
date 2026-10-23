@@ -1,0 +1,446 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Backrooms: Lost in Level 0</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111}
+body{font-family:monospace;color:#eee}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none;text-shadow:0 2px 5px #000}
+#top{display:flex;justify-content:space-between;padding:22px;font-size:14px;letter-spacing:2px}
+#objective{position:absolute;top:75px;left:22px;font-size:13px;color:#e8dfad}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:#ffffffbb}
+#bottom{position:absolute;bottom:22px;left:22px;width:230px;font-size:12px}
+.track{height:7px;background:#161616bb;border:1px solid #aaa;margin-top:6px}
+#stamina{height:100%;width:100%;background:#d6d1a0;transition:width .1s}
+#hint{position:absolute;bottom:25px;left:50%;transform:translateX(-50%);font-size:12px;text-align:center;color:#fff}
+#message{position:absolute;top:43%;left:50%;transform:translate(-50%,-50%);font-size:14px;text-align:center;color:#eee;max-width:90%;line-height:1.8}
+#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 30%,#0005 80%,#000c 130%)}
+#noise{position:fixed;inset:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E")}
+#screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(#17160edb,#17160ef2),radial-gradient(#70652c,#111);z-index:10}
+.panel{width:min(560px,90vw);padding:34px 30px;border:1px solid #8d8247;background:#16160fe8;box-shadow:0 0 80px #0008}
+.kicker{color:#c8b96d;font-size:11px;letter-spacing:5px}
+h1{font-size:clamp(28px,6vw,49px);line-height:1.05;letter-spacing:2px;margin:17px 0 8px}
+.subtitle{color:#c8bf94;font-size:12px;line-height:1.8}
+button{margin-top:22px;width:100%;padding:15px;background:#c9bd78;color:#17150c;border:0;font-family:monospace;font-size:14px;letter-spacing:3px;cursor:pointer}
+button:hover{background:#f0e2a0}
+.controls{margin-top:22px;padding-top:15px;border-top:1px solid #ffffff20;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;color:#aaa}
+.controls b{color:#eee}
+.hidden{display:none!important}
+#flashWarning{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
+@media(max-width:500px){#top{padding:12px;font-size:10px}#objective{left:12px;top:60px}#bottom{left:12px;bottom:12px;width:180px}.controls{font-size:10px}}
+</style>
+</head>
+<body>
+<div id="screen">
+  <div class="panel">
+    <div class="kicker">ARCHIVE 00 / UNKNOWN LOCATION</div>
+    <h1 id="screenTitle">THE BACKROOMS</h1>
+    <div class="subtitle" id="screenText">
+      You have fallen out of reality.<br>
+      An endless office stretches in every direction.<br>
+      Something is moving beyond the lights.<br><br>
+      <b>Find three notes. Find the exit. Do not get caught.</b>
+    </div>
+    <button id="start">ENTER LEVEL 0</button>
+    <div class="controls">
+      <div><b>W A S D</b> — Move</div>
+      <div><b>MOUSE</b> — Look</div>
+      <div><b>SHIFT</b> — Sprint</div>
+      <div><b>F</b> — Flashlight</div>
+      <div><b>ESC</b> — Pause</div>
+      <div><b>E</b> — Read / Escape</div>
+    </div>
+  </div>
+</div>
+<div id="hud">
+  <div id="top">
+    <div>LEVEL 0 // THE LOBBY</div>
+    <div id="clock">00:00</div>
+  </div>
+  <div id="objective">NOTES FOUND: <span id="notes">0</span> / 3<br>EXIT: UNLOCATED</div>
+  <div id="crosshair">+</div>
+  <div id="message"></div>
+  <div id="bottom">STAMINA<div class="track"><div id="stamina"></div></div><div style="margin-top:10px">FLASHLIGHT: <span id="flashText">ON</span></div></div>
+  <div id="hint">WASD to move · Shift to sprint · F for flashlight</div>
+</div>
+<div id="vignette"></div><div id="noise"></div><div id="flashWarning"></div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const $=id=>document.getElementById(id);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x77703a);
+scene.fog=new THREE.FogExp2(0x77703a,0.019);
+
+const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.08,180);
+camera.rotation.order='YXZ';
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.05;
+document.body.prepend(renderer.domElement);
+
+const rand=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function texture(base,kind){
+ const c=document.createElement('canvas');c.width=512;c.height=512;
+ const x=c.getContext('2d');x.fillStyle=base;x.fillRect(0,0,512,512);
+ if(kind==='wall'){
+   for(let i=0;i<512;i+=4){
+    x.fillStyle=`rgba(50,35,8,${Math.random()*.10})`;x.fillRect(i,0,1,512);
+   }
+   for(let y=0;y<512;y+=48){
+    x.fillStyle='#9b8841';x.fillRect(0,y,512,2);
+    for(let z=0;z<512;z+=64){
+     x.strokeStyle=`rgba(55,40,8,${rand(.06,.22)})`;x.lineWidth=2;
+     x.beginPath();x.moveTo(z,y+3);x.lineTo(z+rand(-5,5),y+48);x.stroke();
+     x.beginPath();x.moveTo(z+12,y+10);x.lineTo(z+32,y+25);x.lineTo(z+12,y+40);x.stroke();
+    }
+   }
+ }
+ if(kind==='floor'){
+   for(let i=0;i<14000;i++){
+    const n=Math.random()*40;
+    x.fillStyle=Math.random()>.5?`rgba(10,9,4,${Math.random()*.14})`:`rgba(220,190,110,${Math.random()*.09})`;
+    x.fillRect(rand(0,512),rand(0,512),n*.5,rand(1,3));
+   }
+   for(let y=0;y<512;y+=64){x.fillStyle='#40351c';x.fillRect(0,y,512,2)}
+ }
+ if(kind==='ceiling'){
+   for(let y=0;y<512;y+=128){for(let z=0;z<512;z+=128){
+    x.fillStyle='#393729';x.fillRect(z+2,y+2,124,124);
+    x.fillStyle='#716c53';x.fillRect(z+5,y+5,118,118);
+    x.fillStyle='#3e3a2a';x.fillRect(z+10,y+10,108,108);
+   }}
+ }
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;
+ t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;
+}
+const wallTex=texture('#b9a75c','wall');
+wallTex.repeat.set(1,1);
+const floorTex=texture('#655637','floor');floorTex.repeat.set(9,9);
+const ceilTex=texture('#77735c','ceiling');ceilTex.repeat.set(2,2);
+
+const wallMat=new THREE.MeshStandardMaterial({map:wallTex,color:0xd8c66e,roughness:1});
+const floorMat=new THREE.MeshStandardMaterial({map:floorTex,color:0xc0aa68,roughness:1});
+const ceilMat=new THREE.MeshStandardMaterial({map:ceilTex,color:0xc8c5a9,roughness:1});
+const trimMat=new THREE.MeshStandardMaterial({color:0x82703b,roughness:1});
+const boxGeo=new THREE.BoxGeometry(1,1,1);
+const obstacles=[];
+function block(x,y,z,w,h,d,mat,solid=true){
+ const m=new THREE.Mesh(boxGeo,mat);m.position.set(x,y,z);m.scale.set(w,h,d);
+ m.castShadow=false;m.receiveShadow=true;scene.add(m);
+ if(solid)obstacles.push({x,z,hw:w/2,hd:d/2});
+ return m;
+}
+const WORLD=96,HEIGHT=4.3;
+block(0,-.15,0,WORLD,.3,WORLD,floorMat,false);
+block(0,HEIGHT,0,WORLD,.25,WORLD,ceilMat,false);
+function wall(x,z,w,d){
+ block(x,HEIGHT/2,z,w,HEIGHT,d,wallMat,true);
+ block(x,0.12,z,w,.24,d,trimMat,false);
+}
+// Outer boundary
+wall(0,-WORLD/2,WORLD,1);wall(0,WORLD/2,WORLD,1);
+wall(-WORLD/2,0,1,WORLD);wall(WORLD/2,0,1,WORLD);
+
+// Build irregular walls in connected-looking open rooms.
+// Deliberately leave broad openings and wandering routes.
+for(let x=-40;x<=40;x+=8){
+ for(let z=-40;z<=40;z+=8){
+  if(Math.abs(x)<10&&Math.abs(z)<10)continue;
+  const r=Math.random();
+  if(r<.19){
+   const len=rand(3.5,7.5);
+   if(Math.random()<.5){
+    wall(x+rand(-1,1),z,len,.45);
+   }else{
+    wall(x,z+rand(-1,1),.45,len);
+   }
+  }else if(r<.28){
+   block(x,HEIGHT/2,z,.75,HEIGHT,.75,wallMat,true);
+  }
+ }
+}
+// Extra long walls with doorways for a larger office-maze feeling.
+for(let i=0;i<19;i++){
+ const horizontal=Math.random()<.5;
+ const cx=rand(-37,37),cz=rand(-37,37),length=rand(9,17),gap=rand(3.2,5);
+ const pos=horizontal?cx:cz;
+ const start=pos-length/2;
+ const cut=rand(start+2,start+length-2);
+ const a=cut-gap/2,b=cut+gap/2;
+ const part1=cut-gap/2-start,part2=start+length-(cut+gap/2);
+ if(horizontal){
+  if(part1>2)wall(start+part1/2,cz,part1,.5);
+  if(part2>2)wall(b+part2/2,cz,part2,.5);
+ }else{
+  if(part1>2)wall(cx,start+part1/2,.5,part1);
+  if(part2>2)wall(cx,b+part2/2,.5,part2);
+ }
+}
+// Fluorescent panels and lights
+const lights=[];
+const lampMat=new THREE.MeshBasicMaterial({color:0xfff2b0});
+for(let x=-40;x<=40;x+=10){
+ for(let z=-40;z<=40;z+=10){
+  const panel=new THREE.Mesh(new THREE.BoxGeometry(2.5,.07,1.2),lampMat);
+  panel.position.set(x,HEIGHT-.18,z);scene.add(panel);
+  const light=new THREE.PointLight(0xffe8a0,rand(1.1,2.3),13,2);
+  light.position.set(x,HEIGHT-.3,z);scene.add(light);
+  lights.push({light,base:light.intensity,phase:rand(0,10)});
+ }
+}
+scene.add(new THREE.HemisphereLight(0xb6b08a,0x3e3219,.55));
+
+// Flashlight
+const flashlight=new THREE.SpotLight(0xfff3c8,38,24,Math.PI/7,.42,1.5);
+flashlight.position.set(0,0,0);flashlight.target.position.set(0,0,-1);
+camera.add(flashlight);camera.add(flashlight.target);scene.add(camera);
+const ambient=new THREE.PointLight(0xffe7a2,.15,5);camera.add(ambient);
+
+// Player and game state
+const player={x:0,z:0,yaw:0,pitch:0,stamina:100,flash:true};
+camera.position.set(0,1.7,0);
+const keys={};
+let started=false,paused=true,ended=false,won=false;
+let notes=0,elapsed=0,last=performance.now(),messageUntil=0;
+const velocity=new THREE.Vector3();
+const direction=new THREE.Vector3();
+const clock=new THREE.Clock();
+
+function safeSpot(minDist=12){
+ for(let i=0;i<400;i++){
+  const x=rand(-42,42),z=rand(-42,42);
+  if(Math.hypot(x,z)<minDist)continue;
+  if(!obstacles.some(o=>Math.abs(x-o.x)<o.hw+1&&Math.abs(z-o.z)<o.hd+1))return {x,z};
+ }
+ return {x:rand(20,35),z:rand(20,35)};
+}
+function prop(x,y,z,geo,mat,scale=1){
+ const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.scale.setScalar(scale);scene.add(m);return m;
+}
+// Three collectible notes
+const collectibles=[];
+const noteMat=new THREE.MeshStandardMaterial({color:0xe5d9a2,emissive:0x3b2e0c,roughness:1,side:THREE.DoubleSide});
+for(let i=0;i<3;i++){
+ const p=safeSpot(15);
+ const paper=new THREE.Mesh(new THREE.PlaneGeometry(.38,.5),noteMat);
+ paper.position.set(p.x,1.25,p.z);paper.rotation.y=rand(0,Math.PI*2);
+ scene.add(paper);
+ const glow=new THREE.PointLight(0xffd35a,.6,3);glow.position.set(p.x,1.3,p.z);scene.add(glow);
+ collectibles.push({mesh:paper,glow,got:false});
+}
+// Exit doorway with a dim green light
+const exitSpot=safeSpot(25);
+const exitGroup=new THREE.Group();exitGroup.position.set(exitSpot.x,0,exitSpot.z);
+const exitMat=new THREE.MeshStandardMaterial({color:0x151a12,roughness:1});
+const greenMat=new THREE.MeshBasicMaterial({color:0x74ff9b});
+const door=new THREE.Mesh(new THREE.BoxGeometry(1.7,3.1,.15),exitMat);door.position.y=1.55;exitGroup.add(door);
+const sign=new THREE.Mesh(new THREE.BoxGeometry(1.9,.24,.08),greenMat);sign.position.y=3.25;exitGroup.add(sign);
+scene.add(exitGroup);
+const exitLight=new THREE.PointLight(0x46ff8d,2,8);exitLight.position.set(exitSpot.x,2.8,exitSpot.z);scene.add(exitLight);
+
+// The entity: dark, simple humanoid silhouette
+const entity=new THREE.Group();
+const dark=new THREE.MeshStandardMaterial({color:0x090909,roughness:1});
+const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.95,4,8),dark);body.position.y=1.2;entity.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.3,12,10),dark);head.position.y=2;entity.add(head);
+const eyeMat=new THREE.MeshBasicMaterial({color:0xff3322});
+for(const x of [-.12,.12]){
+ const eye=new THREE.Mesh(new THREE.SphereGeometry(.045,8,8),eyeMat);
+ eye.position.set(x,2.02,-.26);entity.add(eye);
+}
+scene.add(entity);
+let enemy={x:0,z:0,active:false,speed:1.05,phase:rand(0,10)};
+function placeEnemy(){
+ let p=safeSpot(28);
+ enemy.x=p.x;enemy.z=p.z;
+ entity.position.set(p.x,0,p.z);entity.visible=false;
+}
+placeEnemy();
+
+function showMessage(text,duration=2400){
+ $('message').textContent=text;messageUntil=performance.now()+duration;
+}
+function updateObjective(){
+ $('notes').textContent=notes;
+ $('objective').innerHTML=`NOTES FOUND: ${notes} / 3<br>EXIT: ${notes===3?'LOCATED':'UNLOCATED'}`;
+}
+function startGame(){
+ if(ended){location.reload();return}
+ started=true;paused=false;$('screen').classList.add('hidden');
+ renderer.domElement.requestPointerLock?.();
+ showMessage('Find the notes. Listen carefully.',3500);
+}
+$('start').addEventListener('click',startGame);
+document.addEventListener('pointerlockchange',()=>{
+ if(!document.pointerLockElement&&started&&!ended){
+  paused=true;$('screen').classList.remove('hidden');
+  $('screenTitle').textContent='PAUSED';
+  $('screenText').innerHTML='The lights are still buzzing.<br>Something may have moved while you were away.';
+  $('start').textContent='RESUME EXPLORATION';
+ }
+});
+document.addEventListener('mousemove',e=>{
+ if(!started||paused||!document.pointerLockElement)return;
+ player.yaw-=e.movementX*.0021;
+ player.pitch-=e.movementY*.0018;
+ player.pitch=clamp(player.pitch,-1.45,1.45);
+ camera.rotation.set(player.pitch,player.yaw,0);
+});
+document.addEventListener('keydown',e=>{
+ keys[e.code]=true;
+ if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+ if(e.repeat)return;
+ if(e.code==='KeyF'&&started&&!ended){
+  player.flash=!player.flash;flashlight.visible=player.flash;
+  $('flashText').textContent=player.flash?'ON':'OFF';
+ }
+ if(e.code==='KeyE'&&started&&!paused&&!ended)interact();
+ if(e.code==='Escape'&&started&&!ended&&document.pointerLockElement)document.exitPointerLock();
+});
+document.addEventListener('keyup',e=>keys[e.code]=false);
+document.addEventListener('contextmenu',e=>e.preventDefault());
+
+function collides(x,z,r=.34){
+ return obstacles.some(o=>Math.abs(x-o.x)<o.hw+r&&Math.abs(z-o.z)<o.hd+r);
+}
+function movePlayer(dx,dz){
+ const nx=player.x+dx,nz=player.z+dz;
+ if(!collides(nx,player.z))player.x=nx;
+ if(!collides(player.x,nz))player.z=nz;
+}
+function interact(){
+ let nearest=null,best=2.2;
+ for(const c of collectibles){
+  if(c.got)continue;
+  const d=Math.hypot(player.x-c.mesh.position.x,player.z-c.mesh.position.z);
+  if(d<best){nearest=c;best=d}
+ }
+ if(nearest){
+  nearest.got=true;nearest.mesh.visible=false;nearest.glow.visible=false;notes++;
+  updateObjective();
+  showMessage([
+   'NOTE 01: The lights never turn off.',
+   'NOTE 02: I heard footsteps behind the wall.',
+   'NOTE 03: If you see the exit, do not look back.'
+  ][notes-1],4200);
+  if(notes===1){enemy.active=true;entity.visible=true;showMessage('Something heard you. RUN.',3000)}
+  return;
+ }
+ const d=Math.hypot(player.x-exitSpot.x,player.z-exitSpot.z);
+ if(d<3){
+  if(notes<3)showMessage(`The exit is locked. Find ${3-notes} more note(s).`,2500);
+  else finish(true);
+ }else showMessage('Nothing here.',900);
+}
+function finish(victory){
+ ended=true;paused=true;document.exitPointerLock?.();
+ $('screen').classList.remove('hidden');
+ $('screenTitle').textContent=victory?'YOU ESCAPED':'YOU WERE FOUND';
+ $('screenText').innerHTML=victory
+ ?`You escaped Level 0.<br>Time survived: ${formatTime(elapsed)}<br><br>The next level is waiting.`
+ :`The footsteps stopped.<br>Then the lights went out.<br><br>Time survived: ${formatTime(elapsed)}`;
+ $('start').textContent='PLAY AGAIN';
+ $('message').textContent='';
+}
+function formatTime(s){
+ const m=Math.floor(s/60).toString().padStart(2,'0');
+ const sec=Math.floor(s%60).toString().padStart(2,'0');
+ return `${m}:${sec}`;
+}
+function update(dt,t){
+ if(!started||paused||ended)return;
+ elapsed+=dt;$('clock').textContent=formatTime(elapsed);
+ // Flickering fluorescent lights
+ for(const l of lights){
+  const f=Math.sin(t*2.3+l.phase);
+  l.light.intensity=l.base*(f<-.96?.12:f<-.86?.65:1);
+ }
+ // Movement relative to where the camera faces
+ const forward=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
+ const side=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+ const moving=forward!==0||side!==0;
+ const sprint=moving&&(keys.ShiftLeft||keys.ShiftRight)&&player.stamina>1;
+ const speed=sprint?5.3:2.75;
+ if(sprint)player.stamina=Math.max(0,player.stamina-29*dt);
+ else player.stamina=Math.min(100,player.stamina+17*dt);
+ $('stamina').style.width=player.stamina+'%';
+ if(moving){
+  const len=Math.hypot(forward,side)||1;
+  const f=forward/len,s=side/len;
+  const dx=(-Math.sin(player.yaw)*f+Math.cos(player.yaw)*s)*speed*dt;
+  const dz=(-Math.cos(player.yaw)*f-Math.sin(player.yaw)*s)*speed*dt;
+  movePlayer(dx,dz);
+ }
+ // Subtle first-person walking sway
+ const bob=moving?Math.sin(t*(sprint?15:9))*.025:0;
+ camera.position.set(player.x,1.68+bob,player.z);
+ // Nearby note prompt
+ let close=false;
+ for(const c of collectibles)if(!c.got&&Math.hypot(player.x-c.mesh.position.x,player.z-c.mesh.position.z)<2.2)close=true;
+ const exitDist=Math.hypot(player.x-exitSpot.x,player.z-exitSpot.z);
+ if(exitDist<3)close=true;
+ $('hint').textContent=close?'Press E to interact':(sprint?'RUNNING — watch your stamina':'WASD to move · Shift to sprint · F flashlight');
+ // Entity follows the player after the first note
+ if(enemy.active){
+  const dx=player.x-enemy.x,dz=player.z-enemy.z;
+  const d=Math.hypot(dx,dz)||1;
+  enemy.speed=Math.min(2.65,1.0+notes*.32+elapsed*.009);
+  if(d>0.8){
+   const step=enemy.speed*dt;
+   const nx=enemy.x+dx/d*step,nz=enemy.z+dz/d*step;
+   if(!collides(nx,enemy.z,.4))enemy.x=nx;
+   if(!collides(enemy.x,nz,.4))enemy.z=nz;
+  }
+  entity.position.set(enemy.x,Math.sin(t*5)*.04,enemy.z);
+  entity.lookAt(player.x,0,player.z);
+  // Proximity effects
+  if(d<11){
+   const strength=(11-d)/11;
+   scene.fog.density=.019+strength*.016;
+   $('vignette').style.background=`radial-gradient(ellipse at center,transparent ${Math.max(10,35-strength*25)}%,rgba(30,0,0,${strength*.45}) 100%)`;
+  }else{
+   scene.fog.density=.019;
+   $('vignette').style.background='';
+  }
+  if(d<1.05)finish(false);
+ }
+ // A tiny chance of a distant light flicker warning
+ if(Math.random()<.002)$('flashWarning').style.opacity='.2';
+ $('flashWarning').style.opacity=Math.max(0,Number($('flashWarning').style.opacity||0)-dt*1.8);
+ if(performance.now()>messageUntil)$('message').textContent='';
+ // Exit is easier to see after all notes are found
+ exitLight.intensity=notes===3?3.5:1.2;
+ sign.material.color.setHex(notes===3?0x49ff79:0x6c6c43);
+ collectibles.forEach(c=>{
+  if(!c.got){c.mesh.rotation.y+=dt*.15;c.mesh.position.y=1.25+Math.sin(t*1.8)*.035}
+ });
+}
+function animate(now){
+ requestAnimationFrame(animate);
+ const dt=Math.min((now-last)/1000,.05);last=now;
+ update(dt,now/1000);
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+ renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+});
+updateObjective();
+</script>
+</body>
+</html>
